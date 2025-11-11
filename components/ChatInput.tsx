@@ -1,0 +1,231 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { t } from '../i18n';
+import { WebSearchToggle } from './WebSearchToggle';
+import { CheckIcon } from './icons/CheckIcon';
+
+interface ChatInputProps {
+  onSend: (prompt: string, imageFiles: File[], useWebSearch: boolean, aspectRatio: string) => void;
+  referenceImageUrl?: string | null;
+  onClearReferenceImage: () => void;
+  prefilledPrompt?: string;
+  onPrefillConsumed?: () => void;
+  isDisabled?: boolean;
+}
+
+const aspectRatios = [
+    { key: '1:1', label: t('aspectRatioSquare'), value: '1:1' },
+    { key: '4:3', label: t('aspectRatioLandscape'), value: '4:3' },
+    { key: '3:4', label: t('aspectRatioPortrait'), value: '3:4' },
+    { key: '16:9', label: t('aspectRatioLandscape'), value: '16:9' },
+    { key: '9:16', label: t('aspectRatioPortrait'), value: '9:16' },
+];
+
+export const ChatInput: React.FC<ChatInputProps> = ({
+  onSend,
+  referenceImageUrl,
+  onClearReferenceImage,
+  prefilledPrompt,
+  onPrefillConsumed,
+  isDisabled = false,
+}) => {
+  const [prompt, setPrompt] = useState('');
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [useWebSearch, setUseWebSearch] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [isAspectRatioMenuOpen, setIsAspectRatioMenuOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const ratioMenuRef = useRef<HTMLDivElement>(null);
+  
+  // Close aspect ratio menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ratioMenuRef.current && !ratioMenuRef.current.contains(event.target as Node)) {
+        setIsAspectRatioMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  
+  useEffect(() => {
+    return () => {
+      imageUrls.forEach(URL.revokeObjectURL);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageUrls]);
+
+  useEffect(() => {
+    if (prefilledPrompt) {
+      setPrompt(prefilledPrompt);
+      onPrefillConsumed?.();
+    }
+  }, [prefilledPrompt, onPrefillConsumed]);
+
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = [...e.target.files];
+      const newFiles = [...imageFiles, ...files];
+      setImageFiles(newFiles);
+
+      const newUrls = files.map(file => URL.createObjectURL(file));
+      setImageUrls(prev => [...prev, ...newUrls]);
+    }
+  };
+
+  const handleSend = () => {
+    if (prompt.trim() && onSend) {
+      onSend(prompt.trim(), imageFiles, useWebSearch, aspectRatio);
+      setPrompt('');
+      setImageFiles([]);
+      setImageUrls([]); // URLs are revoked in useEffect cleanup
+      if(fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSend();
+    }
+  };
+  
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImageUrls(prev => {
+        // No need to revoke here, useEffect handles it when the array changes.
+        return prev.filter((_, i) => i !== index);
+    });
+  }
+  
+  const handleSelectRatio = (ratio: string) => {
+    setAspectRatio(ratio);
+    setIsAspectRatioMenuOpen(false);
+  }
+
+  return (
+    <div className="bg-[#1C1C1E] rounded-2xl flex items-start p-2.5 shadow-lg w-full">
+      <div className="flex-1 flex flex-col">
+        {imageFiles.length > 0 && (
+          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
+            {imageUrls.map((url, index) => (
+              <div key={index} className="relative">
+                <img src={url} alt={`Upload preview ${index + 1}`} className="w-12 h-12 rounded-lg object-cover" />
+                <button 
+                  onClick={() => removeImage(index)}
+                  className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
+                  aria-label={`Remove image ${index + 1}`}
+                  title={t('tooltipRemoveImage')}
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {imageFiles.length === 0 && referenceImageUrl && (
+          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
+              <div className="relative">
+                <img src={referenceImageUrl} alt="Reference Image" className="w-12 h-12 rounded-lg object-cover" />
+                <button 
+                  onClick={onClearReferenceImage}
+                  className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
+                  aria-label="Clear reference image"
+                  title="Clear reference image"
+                >
+                  &times;
+                </button>
+              </div>
+          </div>
+        )}
+
+        <input
+          type="text"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={referenceImageUrl || imageFiles.length > 0 ? t('chatPlaceholderEdit') : t('chatPlaceholderNew')}
+          className="bg-transparent text-white placeholder-gray-500 focus:outline-none text-base w-full px-1"
+          disabled={isDisabled}
+        />
+      </div>
+      <div className="flex items-center self-end gap-1">
+        <WebSearchToggle isEnabled={useWebSearch} onToggle={setUseWebSearch} />
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          className="hidden"
+          accept="image/png, image/jpeg, image/webp"
+          multiple
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2 text-gray-400 hover:text-white"
+          disabled={isDisabled}
+          title={t('tooltipAddImage')}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <div className="relative" ref={ratioMenuRef}>
+            <button
+              onClick={() => setIsAspectRatioMenuOpen(prev => !prev)}
+              className="p-2 text-gray-400 hover:text-white"
+              disabled={isDisabled}
+              title={t('tooltipAspectRatio')}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+            </button>
+            {isAspectRatioMenuOpen && (
+                <div className="absolute bottom-full right-0 mb-2 bg-[#2C2C2E] rounded-lg shadow-xl border border-white/10 w-48 p-2 z-10">
+                    <p className="px-2 py-1 text-xs font-semibold text-gray-400">{t('aspectRatio')}</p>
+                    {aspectRatios.map(ratio => (
+                        <button key={ratio.key} onClick={() => handleSelectRatio(ratio.value)} className="w-full text-left flex items-center justify-between px-2 py-1.5 text-sm text-gray-200 hover:bg-white/10 rounded-md">
+                           <span>{ratio.label} ({ratio.value})</span>
+                           {aspectRatio === ratio.value && <CheckIcon />}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+        <button
+          onClick={handleSend}
+          disabled={!prompt.trim() || isDisabled}
+          className="p-2 rounded-full bg-gray-700 text-white disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+          title={t('tooltipSendMessage')}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="12" y1="19" x2="12" y2="5"></line>
+            <polyline points="5 12 12 5 19 12"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
