@@ -195,13 +195,13 @@ export async function* generateNewImages(
     responseMimeType: 'application/json',
     responseSchema: generationPlanSchema,
   };
-  const planPrompt = `You are a world-class creative director and prompt engineer acting as a planner. A user wants to generate a new image with the prompt: "${userPrompt}". The user's language is "${lang}".
+  const planPrompt = `You are a world-class AI product photographer and visual artist. A user wants to generate a new product image with the prompt: "${userPrompt}". The user's language is "${lang}".
       
-      Your task is to conceptualize 3 distinct, high-quality artistic variations based on their prompt.
+      Your task is to conceptualize 3 distinct, high-quality product photography variations based on their prompt.
       1.  Write a brief, encouraging, conversational response in the USER'S LANGUAGE (${lang}).
-      2.  For each variation, create a short title and a one-sentence description, also in the USER'S LANGUAGE.
-      3.  For each variation's 'modifiedPrompt' (which must be in ENGLISH), write a descriptive, multi-sentence paragraph for an image generation AI. Do NOT use simple keywords. Instead, describe a complete photorealistic scene. Incorporate professional photographic terms like camera angles (e.g., "low-angle shot", "close-up"), lens types (e.g., "85mm portrait lens", "wide-angle"), and lighting conditions (e.g., "golden hour light", "softbox setup", "cinematic lighting").
-      4.  Generate 4 short, actionable follow-up prompts in the USER'S LANGUAGE.
+      2.  For each variation, create a short, evocative title (e.g., "Minimalist Matte," "Neon Cyberpunk") and a one-sentence description, also in the USER'S LANGUAGE.
+      3.  For each variation's 'modifiedPrompt' (which must be in ENGLISH), write a detailed, multi-sentence paragraph for an image generation AI. Focus on studio lighting (e.g., softbox, rim light, dramatic shadows), composition (e.g., flat lay, hero shot, macro close-up), background environments (e.g., solid color, podium, lifestyle scene), and material textures. Incorporate professional photographic terms like "85mm lens", "f/1.8 aperture", "bokeh", and "studio lighting".
+      4.  Generate 4 short, actionable follow-up prompts in the USER'S LANGUAGE that a creative director might suggest next (e.g., "Change the background to marble", "Add a splash of water", "Show it in a lifestyle setting").
       5.  The prompt MUST be designed to generate an image with a '${aspectRatio}' aspect ratio.
       
       Return this plan in the specified JSON format.`;
@@ -282,17 +282,18 @@ export async function* generateImageEdits(
     
     config.tools = [{ googleSearch: {} }];
     
-    planPrompt = `You are a creative AI assistant. A user has provided ${images.length} image(s) and a prompt in "${lang}": "${userPrompt}".
+    planPrompt = `You are a creative AI product photography assistant. A user has provided ${images.length} image(s) and a prompt in "${lang}": "${userPrompt}".
 
-        Your task is to create a superior generation plan using multilingual web search.
-        1.  Analyze ALL provided images' content, style, and composition. If there are people in the images, pay close attention to their faces.
-        2.  Take the user's prompt and perform Google searches for advanced "nano banana" (a generative AI model) techniques. Search in MULTIPLE LANGUAGES, including English, Japanese, and Korean, to find diverse ideas.
-        3.  Synthesize your findings from the multilingual search and the original request to create a generation plan.
-        4.  Write a brief, encouraging, conversational response to the user. YOU MUST RESPOND IN THE USER'S LANGUAGE (${lang}).
-        5.  Come up with 3 distinct, creative variations based on your findings. For each, create a title and description in the user's language.
-        6.  The 'modifiedPrompt' field MUST be a non-empty, highly detailed string written in ENGLISH for the image model. CRITICAL: If the original image contains people, add this instruction at the end of the prompt: "--no-face-swap, preserve facial identity from original image".
-        7.  Generate 4 actionable follow-up prompts in the user's language.
-        8. The final generated image MUST have a '${aspectRatio}' aspect ratio. This is a critical instruction that must be reflected in the 'modifiedPrompt'.
+        Your task is to create a superior generation plan using multilingual web search for product photography inspiration.
+        1.  Synthesize your findings to create a generation plan for 3 distinct variations.
+        2.  Write a brief, encouraging response in the USER'S LANGUAGE (${lang}).
+        3.  For each variation, create a title and description in the user's language.
+        4.  The 'modifiedPrompt' field MUST be a non-empty, highly detailed string written in ENGLISH for the image model. 
+        5.  **Generation Strategy:**
+            *   **For View/Angle/Environment Changes** (e.g., 'top down view', 'on a marble table', 'lifestyle shot'): Your primary goal is to create a *new studio setup or environment* based on web research. You MUST change the camera angle, composition, and lighting significantly. The product is the subject, but it's being placed in a new context.
+            *   **For Style/Material/Color Changes** (e.g., 'make it gold', 'change label to blue'): Your primary goal is to *modify the existing image*. You MUST preserve the original camera angle, composition, and lighting. Only alter the specified product features or materials.
+        6.  Generate 4 actionable, creative follow-up prompts in the user's language.
+        7. The final generated image MUST have a '${aspectRatio}' aspect ratio.
         
         EXTREMELY IMPORTANT: Your entire response must be a single, valid JSON object. It MUST start with '{' and end with '}'. Do NOT include any text, greetings, or markdown formatting like \`\`\`json before or after the JSON object.`;
     
@@ -301,15 +302,18 @@ export async function* generateImageEdits(
   } else {
      config.responseMimeType = 'application/json';
      config.responseSchema = generationPlanSchema;
-     planPrompt = `You are a world-class creative director and prompt engineer acting as a planner. A user wants to edit/combine ${images.length} image(s) with the prompt: "${userPrompt}". The user's language is "${lang}".
-        
-        Your task is to analyze ALL provided images and conceptualize 3 distinct, high-quality artistic variations.
+     planPrompt = `You are a world-class AI product photographer and visual artist. A user has provided ${images.length} image(s) and a prompt: "${userPrompt}". The user's language is "${lang}".
+
+        Your task is to analyze the image(s) and the user's request to create a generation plan for 3 distinct product photography variations.
+
         1.  Write a brief, encouraging, conversational response in the USER'S LANGUAGE (${lang}).
-        2.  For each variation, create a short title and a one-sentence description, also in the USER'S LANGUAGE.
-        3.  For each variation's 'modifiedPrompt' (which must be in ENGLISH), write a descriptive, multi-sentence paragraph. Do NOT use simple keywords. Instead, describe a complete photorealistic scene. Incorporate professional photographic terms like camera angles (e.g., "low-angle shot", "close-up"), lens types (e.g., "85mm portrait lens", "wide-angle"), and lighting conditions (e.g., "golden hour light", "softbox setup", "cinematic lighting"). CRITICAL: If the original image contains people, you must add this instruction at the end of the prompt: "--no-face-swap, preserve facial identity from original image".
-        4.  Generate 4 short, actionable follow-up prompts in the USER'S LANGUAGE.
-        5.  Ensure the final image is rendered with a '${aspectRatio}' aspect ratio. This is a strict constraint that must be reflected in the 'modifiedPrompt'.
-        
+        2.  For each variation, create a short title and description in the USER'S LANGUAGE.
+        3.  For each variation's 'modifiedPrompt' (must be in ENGLISH), write a detailed, multi-sentence paragraph based on the following strategy:
+            *   **For View/Angle/Environment Changes** (e.g., 'top down view', 'on a marble table', 'lifestyle shot', 'side profile'): Your primary goal is to create a *new studio setup or environment*. You MUST change the camera angle, composition, and lighting significantly to match the request. Describe the new camera position and background vividly. The product is the subject, but it's being placed in a new context.
+            *   **For Style/Material/Color Changes** (e.g., 'make it gold', 'change label to blue', 'add condensation'): Your primary goal is to *modify the existing image*. You MUST preserve the original camera angle, composition, and lighting as closely as possible. Describe only the specific changes to materials or product details.
+        4.  Generate 4 actionable, creative follow-up prompts in the USER'S LANGUAGE.
+        5.  Ensure the final image is rendered with a '${aspectRatio}' aspect ratio.
+
         Return this plan in the specified JSON format.`;
     
     contents.parts.push({ text: planPrompt });
@@ -474,7 +478,7 @@ export const editImageWithMask = async (base64Data: string, mimeType: string, pr
     const client = getAiClient();
     const imagePart = { inlineData: { data: base64Data, mimeType } };
     const maskPart = { inlineData: { data: maskBase64, mimeType: 'image/png' } };
-    const textPart = { text: `User request: "${prompt}". You are a professional photo editor. Your task is to edit an image based on the user's request, but you MUST ONLY modify the white masked area. The rest of the image (the black area) must remain completely unchanged. Do not alter the original image's style, lighting, or composition. Apply the change seamlessly and realistically to the masked region.` };
+    const textPart = { text: `User request: "${prompt}". You are a world-class professional product photo retoucher. Your task is to edit an image based on the user's request, but you MUST ONLY modify the white masked area. The rest of the image (the black area) must remain completely unchanged. Do not alter the original image's style, lighting, or composition. Apply the change seamlessly and realistically to the masked region.` };
 
     const response = await client.models.generateContent({
         model: 'gemini-2.5-flash-image',

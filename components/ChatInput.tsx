@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { t } from '../i18n';
 import { WebSearchToggle } from './WebSearchToggle';
@@ -5,8 +6,8 @@ import { CheckIcon } from './icons/CheckIcon';
 
 interface ChatInputProps {
   onSend: (prompt: string, imageFiles: File[], useWebSearch: boolean, aspectRatio: string) => void;
-  referenceImageUrl?: string | null;
-  onClearReferenceImage: () => void;
+  referenceImageUrls?: string[];
+  onRemoveReferenceImage: (index: number) => void;
   prefilledPrompt?: string;
   onPrefillConsumed?: () => void;
   isDisabled?: boolean;
@@ -22,8 +23,8 @@ const aspectRatios = [
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   onSend,
-  referenceImageUrl,
-  onClearReferenceImage,
+  referenceImageUrls = [],
+  onRemoveReferenceImage,
   prefilledPrompt,
   onPrefillConsumed,
   isDisabled = false,
@@ -65,7 +66,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const files = [...e.target.files];
+      const files = Array.from(e.target.files);
       const newFiles = [...imageFiles, ...files];
       setImageFiles(newFiles);
 
@@ -104,14 +105,38 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     setAspectRatio(ratio);
     setIsAspectRatioMenuOpen(false);
   }
+  
+  const hasReferences = referenceImageUrls.length > 0;
+  const hasUploads = imageFiles.length > 0;
 
   return (
     <div className="bg-[#1C1C1E] rounded-2xl flex items-start p-2.5 shadow-lg w-full">
       <div className="flex-1 flex flex-col">
-        {imageFiles.length > 0 && (
+        {/* Display Reference Images */}
+        {hasReferences && (
+          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
+             {referenceImageUrls.map((url, index) => (
+                <div key={`ref-${index}`} className="relative group">
+                    <img src={url} alt={`Reference ${index + 1}`} className="w-12 h-12 rounded-lg object-cover border border-blue-500/50" />
+                    <div className="absolute -bottom-2 -right-2 bg-blue-600 text-[10px] text-white px-1.5 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">Ref</div>
+                    <button 
+                      onClick={() => onRemoveReferenceImage(index)}
+                      className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
+                      aria-label="Remove reference"
+                      title="Remove reference"
+                    >
+                      &times;
+                    </button>
+                </div>
+             ))}
+          </div>
+        )}
+
+        {/* Display New Uploads */}
+        {hasUploads && (
           <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
             {imageUrls.map((url, index) => (
-              <div key={index} className="relative">
+              <div key={`upload-${index}`} className="relative">
                 <img src={url} alt={`Upload preview ${index + 1}`} className="w-12 h-12 rounded-lg object-cover" />
                 <button 
                   onClick={() => removeImage(index)}
@@ -126,28 +151,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         )}
 
-        {imageFiles.length === 0 && referenceImageUrl && (
-          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
-              <div className="relative">
-                <img src={referenceImageUrl} alt="Reference Image" className="w-12 h-12 rounded-lg object-cover" />
-                <button 
-                  onClick={onClearReferenceImage}
-                  className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
-                  aria-label="Clear reference image"
-                  title="Clear reference image"
-                >
-                  &times;
-                </button>
-              </div>
-          </div>
-        )}
-
         <input
           type="text"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={referenceImageUrl || imageFiles.length > 0 ? t('chatPlaceholderEdit') : t('chatPlaceholderNew')}
+          placeholder={hasReferences || hasUploads ? t('chatPlaceholderEdit') : t('chatPlaceholderNew')}
           className="bg-transparent text-white placeholder-gray-500 focus:outline-none text-base w-full px-1"
           disabled={isDisabled}
         />

@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -12,11 +13,11 @@ import { DevModeConfirmationModal } from './DevModeConfirmationModal';
 interface AlbumViewProps {
   album: Album;
   onUpdateAlbum: (album: Album) => void;
-  onSetReferenceImage: (imageUrl: string | null) => void;
+  onUpdateReferenceImages: (imageUrls: string[]) => void;
   isDevMode: boolean;
 }
 
-export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSetReferenceImage, isDevMode }) => {
+export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUpdateReferenceImages, isDevMode }) => {
   const [selectedImageUrl, setSelectedImageUrl] = React.useState<string | null>(null);
   const [prefilledPrompt, setPrefilledPrompt] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -60,64 +61,51 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
     scrollToBottom();
   }, [album.chatHistory]);
   
-  const readFilesAsBase64 = (files: File[]): Promise<{ base64Data: string, mimeType: string }[]> => {
-    return Promise.all(files.map(file => {
-        return new Promise<{ base64Data: string; mimeType: string }>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve({
-                base64Data: (reader.result as string).split(',')[1],
-                mimeType: file.type
-            });
-            reader.onerror = reject;
-        });
-    }));
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+    });
+  };
+
+  const dataUrlToBase64 = (dataUrl: string) => {
+      return {
+          base64Data: dataUrl.split(',')[1],
+          mimeType: dataUrl.match(/:(.*?);/)?.[1] || 'image/png'
+      };
   };
 
   const handleSendPrompt = useCallback(
-    async (prompt: string, imageFiles: File[], useWebSearch: boolean, aspectRatio: string) => {
+    async (prompt: string, imageFiles: File[], useWebSearch: boolean, aspectRatio: string, explicitReferenceUrls?: string[]) => {
       if (!prompt) return;
 
       const execute = async () => {
         const userMessageId = Date.now().toString();
         const assistantLoadingId = (Date.now() + 1).toString();
         
-        let filesToProcess: File[] = imageFiles;
-        let sourceForDisplay: string | undefined = undefined;
-        let displayImageUrls = imageFiles.map(file => URL.createObjectURL(file));
-        let isNewTextToImage = false;
-        
-        // Determine files and source image to use
-        if (imageFiles.length === 0) {
-            if (album.referenceImageUrl) {
-                // Case 1: Edit using reference image
-                try {
-                    const refFile = await dataUrlToFile(album.referenceImageUrl, 'ref.png');
-                    filesToProcess = [refFile];
-                    sourceForDisplay = album.referenceImageUrl;
-                    displayImageUrls = [album.referenceImageUrl];
-                } catch (e) { console.error("Could not use reference image", e); return; }
-            } else {
-                // Case 2: New text-to-image generation
-                isNewTextToImage = true;
-            }
-        } else {
-            // Case 3: Edit using newly uploaded image(s). Update the reference.
-            const reader = new FileReader();
-            reader.readAsDataURL(imageFiles[0]);
-            reader.onloadend = () => {
-                onSetReferenceImage(reader.result as string);
-            };
-            sourceForDisplay = displayImageUrls[0];
+        // 1. Accumulate new images into references
+        let currentReferenceUrls = explicitReferenceUrls || [...(album.referenceImageUrls || [])];
+        let newUploadedUrls: string[] = [];
+
+        if (imageFiles.length > 0) {
+            newUploadedUrls = await Promise.all(imageFiles.map(file => fileToDataUrl(file)));
+            currentReferenceUrls = [...currentReferenceUrls, ...newUploadedUrls];
+            // Update album state immediately with new references
+            onUpdateReferenceImages(currentReferenceUrls);
         }
+
+        const isNewTextToImage = currentReferenceUrls.length === 0;
+        const sourceForDisplay = currentReferenceUrls.length > 0 ? currentReferenceUrls[0] : undefined;
+        let displayImageUrls = [...newUploadedUrls]; 
 
         try {
           const updatedChatWithUser: ChatMessageType[] = [
             ...album.chatHistory,
             { id: userMessageId, role: 'user', text: prompt, imageUrls: displayImageUrls },
           ];
-          onUpdateAlbum({ ...album, chatHistory: updatedChatWithUser });
-
+          
           const placeholderVariations: ImageVariation[] = Array(3).fill(null).map((_, i) => ({
               id: `placeholder-${Date.now()}-${i}`,
               title: 'Loading...',
@@ -127,7 +115,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
               isLoading: true,
           }));
           
-          let currentAlbumState = { ...album, chatHistory: updatedChatWithUser, galleryImages: [...album.galleryImages, ...placeholderVariations] };
+          let currentAlbumState = { ...album, chatHistory: updatedChatWithUser, galleryImages: [...album.galleryImages, ...placeholderVariations], referenceImageUrls: currentReferenceUrls };
           onUpdateAlbum(currentAlbumState);
           
           const loadingMessage: ChatMessageType = { id: assistantLoadingId, role: 'assistant', isLoading: true, sourceImageUrl: sourceForDisplay };
@@ -139,9 +127,12 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
           onUpdateAlbum(currentAlbumState);
 
           try {
+            // Prepare images for API
+            const imagesForApi = currentReferenceUrls.map(url => dataUrlToBase64(url));
+
             const generator = isNewTextToImage 
                 ? generateNewImages(prompt, useWebSearch, aspectRatio)
-                : generateImageEdits(await readFilesAsBase64(filesToProcess), prompt, useWebSearch, aspectRatio);
+                : generateImageEdits(imagesForApi, prompt, useWebSearch, aspectRatio);
 
             let planData: any = null;
             let groundingData: any = null;
@@ -200,19 +191,14 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
                 role: 'assistant', 
                 text: error instanceof Error ? error.message : t('genericError'), 
                 isError: true,
-                originalRequest: { prompt, imageFiles: filesToProcess, sourceImageUrl: sourceForDisplay, useWebSearch, aspectRatio }
+                originalRequest: { prompt, imageFiles: imageFiles, sourceImageUrl: sourceForDisplay, useWebSearch, aspectRatio }
               },
             ];
             const galleryWithoutPlaceholders = currentAlbumState.galleryImages.filter(img => !img.isLoading);
             onUpdateAlbum({ ...album, chatHistory: finalChatHistory, galleryImages: galleryWithoutPlaceholders });
           }
         } finally {
-          displayImageUrls.forEach(url => {
-             // Only revoke blob URLs, not data URLs from reference
-            if (url.startsWith('blob:')) {
-              URL.revokeObjectURL(url)
-            }
-          });
+             // Cleanup if needed
         }
       };
 
@@ -229,15 +215,37 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
         execute();
       }
     },
-    [album, onUpdateAlbum, isDevMode, onSetReferenceImage]
+    [album, onUpdateAlbum, isDevMode, onUpdateReferenceImages]
   );
   
-  const handleSuggestionSend = async (suggestion: string, sourceImageUrl?: string) => {
+  const handleSuggestionSend = useCallback(async (suggestion: string, sourceImageUrl?: string) => {
+    let effectiveRefs = [...(album.referenceImageUrls || [])];
     if (sourceImageUrl) {
-      onSetReferenceImage(sourceImageUrl);
+        if (!effectiveRefs.includes(sourceImageUrl)) {
+             effectiveRefs.push(sourceImageUrl);
+             onUpdateReferenceImages(effectiveRefs);
+        }
+        
+        try {
+            const img = new Image();
+            img.src = sourceImageUrl;
+            await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+            const ratio = img.naturalWidth / img.naturalHeight;
+            const aspectRatios = [
+                { key: '1:1', val: 1 }, { key: '4:3', val: 4 / 3 }, { key: '3:4', val: 3 / 4 },
+                { key: '16:9', val: 16 / 9 }, { key: '9:16', val: 9 / 16 },
+            ];
+            const closest = aspectRatios.reduce((prev, curr) => 
+                Math.abs(curr.val - ratio) < Math.abs(prev.val - ratio) ? curr : prev
+            );
+            handleSendPrompt(suggestion, [], false, closest.key, effectiveRefs);
+        } catch(error) {
+            handleSendPrompt(suggestion, [], false, '1:1', effectiveRefs);
+        }
+    } else {
+      setPrefilledPrompt(suggestion);
     }
-    setPrefilledPrompt(suggestion);
-  };
+  }, [handleSendPrompt, onUpdateReferenceImages, album.referenceImageUrls]);
 
   const handleRetry = (failedMessage: ChatMessageType) => {
     if (!failedMessage.originalRequest) return;
@@ -301,7 +309,8 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
   };
   
   const handleAddToChat = async (imageUrl: string) => {
-    onSetReferenceImage(imageUrl);
+    // Add image to reference list
+    onUpdateReferenceImages([...(album.referenceImageUrls || []), imageUrl]);
     handleCloseModal();
   };
   
@@ -323,7 +332,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
                 message={msg} 
                 onSelectImage={handleSelectImage} 
                 onSuggestionClick={handleSuggestionSend}
-                onEditImage={(variation) => onSetReferenceImage(variation.imageUrl)}
+                onEditImage={(variation) => handleAddToChat(variation.imageUrl)}
                 onAddToAlbum={() => {}}
                 onRetry={handleRetry}
                 onRetryVariation={handleRetryVariation}
@@ -334,8 +343,12 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
         <div className="p-4 border-t border-black/20 bg-[#131314]">
             <ChatInput
               onSend={handleSendPrompt}
-              referenceImageUrl={album.referenceImageUrl}
-              onClearReferenceImage={() => onSetReferenceImage(null)}
+              referenceImageUrls={album.referenceImageUrls}
+              onRemoveReferenceImage={(index) => {
+                  const newRefs = [...(album.referenceImageUrls || [])];
+                  newRefs.splice(index, 1);
+                  onUpdateReferenceImages(newRefs);
+              }}
               prefilledPrompt={prefilledPrompt}
               onPrefillConsumed={() => setPrefilledPrompt('')}
               isDisabled={!!isAssistantLoading}
@@ -355,7 +368,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onSe
         </header>
         <ImageGallery 
             images={album.galleryImages} 
-            onEditImage={(variation) => onSetReferenceImage(variation.imageUrl)}
+            onEditImage={(variation) => handleAddToChat(variation.imageUrl)}
             onRetryVariation={handleRetryVariation} 
         />
       </div>

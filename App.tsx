@@ -1,8 +1,8 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { AlbumView } from './components/AlbumView';
 import { Sidebar } from './components/Sidebar';
-import type { Album, ImageVariation } from './types';
-import { dataUrlToFile } from './utils/imageUtils';
+import type { Album } from './types';
 
 const App: React.FC = () => {
   const [album, setAlbum] = useState<Album | null>(null);
@@ -12,11 +12,11 @@ const App: React.FC = () => {
   const handleCreateNewChat = useCallback(() => {
     const newAlbum: Album = {
       id: Date.now().toString(),
-      title: `Chat Session`,
+      title: `New Product Shoot`,
       chatHistory: [],
       galleryImages: [],
       createdAt: new Date(),
-      referenceImageUrl: null,
+      referenceImageUrls: [],
     };
     setAlbum(newAlbum);
   }, []);
@@ -28,9 +28,9 @@ const App: React.FC = () => {
     }
   }, [album, handleCreateNewChat]);
   
-  const handleSetReferenceImage = useCallback((imageUrl: string | null) => {
+  const handleUpdateReferenceImages = useCallback((imageUrls: string[]) => {
     if (album) {
-      setAlbum({ ...album, referenceImageUrl: imageUrl });
+      setAlbum({ ...album, referenceImageUrls: imageUrls });
     }
   }, [album]);
 
@@ -49,7 +49,7 @@ const App: React.FC = () => {
             <AlbumView 
                 album={album} 
                 onUpdateAlbum={setAlbum} 
-                onSetReferenceImage={handleSetReferenceImage}
+                onUpdateReferenceImages={handleUpdateReferenceImages}
                 isDevMode={isDevMode}
             />
         )}

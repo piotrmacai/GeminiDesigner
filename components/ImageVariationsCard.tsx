@@ -5,7 +5,6 @@ import type { ImageVariation, GroundingChunk } from '../types';
 import { t } from '../i18n';
 import { ExpandIcon } from './icons/ExpandIcon';
 import { EditIcon } from './icons/EditIcon';
-import { FollowUpSuggestions } from './FollowUpSuggestions';
 import { ImageVariationErrorCard } from './ImageVariationErrorCard';
 import { DownloadIcon } from './icons/DownloadIcon';
 import { downloadImage } from '../utils/imageUtils';
@@ -81,13 +80,6 @@ export const ImageVariationsCard: React.FC<ImageVariationsCardProps> = ({
             )
         ))}
       </div>
-      
-      {suggestions && suggestions.length > 0 && (
-            <FollowUpSuggestions 
-              suggestions={suggestions}
-              onSuggestionClick={onSuggestionClick}
-            />
-      )}
     </div>
   );
 };

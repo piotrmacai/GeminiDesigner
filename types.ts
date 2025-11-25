@@ -1,6 +1,4 @@
 
-
-// FIX: Added BoundingBox, DetectedObject, and ApiObject types for object detection feature.
 export interface BoundingBox {
   yMin: number;
   xMin: number;
@@ -11,7 +9,6 @@ export interface BoundingBox {
 export interface DetectedObject {
   id: string;
   label: string;
-  // FIX: Corrected typo from BoundingoundingBox to BoundingBox.
   box: BoundingBox;
   mask: string; // base64 mask
   children: DetectedObject[];
@@ -40,7 +37,6 @@ export interface ImageVariation {
     prompt: string;
     aspectRatio?: string;
   };
-  // FIX: Added optional objects property for editor view.
   objects?: DetectedObject[];
 }
 
@@ -80,5 +76,5 @@ export interface Album {
     chatHistory: ChatMessage[];
     galleryImages: ImageVariation[];
     createdAt: Date;
-    referenceImageUrl?: string | null;
+    referenceImageUrls: string[]; 
 }
