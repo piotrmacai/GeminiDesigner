@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { ImageVariation, ApiObject, DetectedObject, BoundingBox } from '../types';
 import { segmentObjectsInImage, editImageWithMask, generateRepositionPrompt, applyRepositionEdit } from '../services/geminiService';
@@ -72,6 +71,10 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
   const [error, setError] = useState<string | null>(null);
   const [imgSize, setImgSize] = useState({ width: 1, height: 1 });
   const [prompt, setPrompt] = useState('');
+  
+  // Reference Image State for Multimodal Editing
+  const [referenceImage, setReferenceImage] = useState<{ url: string, file: File } | null>(null);
+  const refFileInputRef = useRef<HTMLInputElement>(null);
   
   const [expandedObjectIds, setExpandedObjectIds] = useState<Set<string>>(new Set());
   
@@ -301,7 +304,7 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
   const handleGenerateEdit = async () => {
     if (!prompt || !selectedObject) return;
 
-    const execute = async () => {
+    const execute = async (refImageBase64?: string, refImageMimeType?: string) => {
         setGenerationStatus('generating');
         setError(null);
         try {
@@ -309,7 +312,15 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
             const maskBase64 = createMaskFromBox(boxToUse, imgSize.width, imgSize.height);
             const base64Data = currentImage.imageUrl.split(',')[1];
             const mimeType = currentImage.imageUrl.match(/data:(.*);/)?.[1] || 'image/png';
-            const newImageBase64Array = await editImageWithMask(base64Data, mimeType, prompt, maskBase64);
+            
+            const newImageBase64Array = await editImageWithMask(
+                base64Data, 
+                mimeType, 
+                prompt, 
+                maskBase64,
+                refImageBase64,
+                refImageMimeType
+            );
             
             const newVariations = newImageBase64Array.map((b64, i) => ({
               id: `edited-${Date.now()}-${i}`,
@@ -321,6 +332,7 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
 
             setVariationsToSelect(newVariations);
             setPrompt('');
+            setReferenceImage(null); // Clear reference after use
 
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to generate edit.');
@@ -328,27 +340,51 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
             setGenerationStatus('idle');
         }
     };
+    
+    // Prepare Reference Image Data if exists
+    let refBase64: string | undefined;
+    let refMime: string | undefined;
+    if (referenceImage) {
+        try {
+            const reader = new FileReader();
+            reader.readAsDataURL(referenceImage.file);
+            await new Promise<void>(resolve => reader.onload = () => resolve());
+            const dataUrl = reader.result as string;
+            refBase64 = dataUrl.split(',')[1];
+            refMime = dataUrl.match(/:(.*?);/)?.[1];
+        } catch(e) {
+            console.error("Failed to read reference image", e);
+        }
+    }
+
+
     if (isDevMode && selectedObject) {
         const boxToUse = modifiedBoxes[selectedObject.id] || selectedObject.box;
         const maskBase64 = createMaskFromBox(boxToUse, imgSize.width, imgSize.height);
         const maskUrl = `data:image/png;base64,${maskBase64}`;
+        
+        const imagesForModal = [
+            { title: t('devModeOriginalImage'), url: currentImage.imageUrl },
+            { title: t('devModeMaskImage'), url: maskUrl },
+        ];
+        if (referenceImage) {
+            imagesForModal.push({ title: "Reference Image", url: referenceImage.url });
+        }
+
         setDevModalState({
             isOpen: true,
             onConfirm: () => {
                 setDevModalState({ isOpen: false, data: null, onConfirm: () => {} });
-                execute();
+                execute(refBase64, refMime);
             },
             data: {
                 title: t('devModeEditorTitle'),
-                prompt: `You are a professional photo editor. Your task is to edit an image based on a user's request, but you MUST ONLY modify the white masked area. The rest of the image (the black area) must remain completely unchanged. Do not alter the original image's style, lighting, or composition. The user's request is: "${prompt}". Apply this change seamlessly and realistically to the masked region.`,
-                images: [
-                    { title: t('devModeOriginalImage'), url: currentImage.imageUrl },
-                    { title: t('devModeMaskImage'), url: maskUrl },
-                ],
+                prompt: `User request: "${prompt}". Edit the masked area. Reference image provided: ${!!referenceImage}.`,
+                images: imagesForModal,
             },
         });
     } else {
-        execute();
+        execute(refBase64, refMime);
     }
   };
 
@@ -473,6 +509,14 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
     }
   }, [objects, history, historyIndex]);
 
+  const handleRefImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const url = URL.createObjectURL(file);
+        setReferenceImage({ file, url });
+    }
+  };
+
   const isActionInProgress = generationStatus !== 'idle' || isLoading;
   
   const progressMessage = useMemo(() => {
@@ -499,9 +543,9 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
       </header>
 
       <div className="flex flex-1 min-h-0">
-        <main className="flex-1 flex items-center justify-center p-8 min-h-0">
-            <div className="relative w-full h-full" ref={imageContainerRef}>
-                <img ref={imageRef} src={currentImage.imageUrl} alt={currentImage.title} className="w-full h-full object-contain pointer-events-none" crossOrigin="anonymous" onLoad={calculateLayout}/>
+        <main className="flex-1 flex items-center justify-center p-8 min-h-0 bg-[#000000]">
+            <div className="relative w-full h-full flex items-center justify-center" ref={imageContainerRef}>
+                <img ref={imageRef} src={currentImage.imageUrl} alt={currentImage.title} className="max-w-full max-h-full object-contain pointer-events-none" crossOrigin="anonymous" onLoad={calculateLayout}/>
                 {progressMessage && !variationsToSelect && (
                     <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-30 backdrop-blur-sm rounded-md">
                         <Spinner size="lg" />
@@ -552,7 +596,7 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
             </div>
         </main>
 
-        <aside className="w-80 bg-[#1C1C1E] flex flex-col border-l border-white/10">
+        <aside className="w-80 bg-[#1C1C1E] flex flex-col border-l border-white/10 flex-shrink-0">
             <div className="p-4 border-b border-white/10 flex justify-between items-center">
                 <h2 className="text-base font-bold text-white">{t('layers')}</h2>
                 <button 
@@ -566,24 +610,50 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
             </div>
             <div className="flex-1 overflow-y-auto p-2">
                 {isLoading && <ObjectLayerSkeleton />}
-                {!isLoading && error && <p className="text-red-400 p-2">{error}</p>}
-                {!isLoading && !error && objects.length === 0 && <p className="text-gray-400 p-2">No objects detected.</p>}
+                {!isLoading && error && <p className="text-red-400 p-2 text-sm">{error}</p>}
+                {!isLoading && !error && objects.length === 0 && <p className="text-gray-400 p-2 text-sm">No objects detected.</p>}
                 {!isLoading && !error && objects.map(obj => (
                     <ObjectLayer key={obj.id} object={obj} level={0} selectedObjectId={selectedObjectId} onSelect={setSelectedObjectId} isExpanded={expandedObjectIds.has(obj.id)} onToggleExpand={(id) => setExpandedObjectIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })} onRename={handleRenameObject} />
                 ))}
             </div>
-             <div className="p-4 border-t border-white/10 space-y-3">
-                <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={selectedObject ? `Edit ${selectedObject.label}...` : "Select an object to edit..."} className="w-full bg-[#2C2C2E] p-2 rounded text-white placeholder-gray-400 disabled:opacity-50" disabled={!selectedObject || isActionInProgress} />
-                <button onClick={handleGenerateEdit} disabled={!prompt || !selectedObject || isActionInProgress} className="w-full bg-white text-black font-semibold px-5 py-2 rounded-lg disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center">
+             <div className="p-4 border-t border-white/10 space-y-3 bg-[#242426]">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Generative Edit</h3>
+                
+                {/* Reference Image Uploader */}
+                <div className="border border-white/10 rounded-lg p-2 bg-[#131314]">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-gray-400">Reference (Optional)</span>
+                        {referenceImage && (
+                            <button onClick={() => setReferenceImage(null)} className="text-xs text-red-400 hover:text-red-300">Remove</button>
+                        )}
+                    </div>
+                    {referenceImage ? (
+                        <div className="relative h-20 w-full rounded-md overflow-hidden group">
+                            <img src={referenceImage.url} alt="Ref" className="w-full h-full object-cover" />
+                        </div>
+                    ) : (
+                        <button 
+                            onClick={() => refFileInputRef.current?.click()}
+                            className="w-full h-12 border border-dashed border-gray-600 rounded-md flex items-center justify-center text-gray-500 hover:text-white hover:border-gray-400 text-xs transition-colors"
+                        >
+                            + Upload Image
+                        </button>
+                    )}
+                    <input type="file" ref={refFileInputRef} onChange={handleRefImageChange} className="hidden" accept="image/*" />
+                </div>
+
+                <input type="text" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={selectedObject ? `Edit ${selectedObject.label}...` : "Select object & describe edit..."} className="w-full bg-[#2C2C2E] p-2 rounded text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50" disabled={!selectedObject || isActionInProgress} />
+                
+                <button onClick={handleGenerateEdit} disabled={!prompt || !selectedObject || isActionInProgress} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed flex items-center justify-center text-sm transition-colors">
                   {generationStatus === 'generating' ? <Spinner size="sm" /> : t('generate')}
                 </button>
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-red-400 text-xs mt-1">{error}</p>}
              </div>
         </aside>
       </div>
 
-      <footer className="h-[90px] bg-[#131314] border-t border-white/10 flex items-center justify-between px-6 flex-shrink-0">
-        <div className="flex items-center gap-3">
+      <footer className="h-[70px] bg-[#131314] border-t border-white/10 flex items-center justify-between px-6 flex-shrink-0">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
             {history.map((state, index) => (
                 <img
                     key={`${state.image.id}-${index}`}
@@ -591,15 +661,15 @@ export const EditorView: React.FC<EditorViewProps> = ({ image, onDone, isDevMode
                     alt={`History ${index + 1}`}
                     onClick={() => handleHistoryClick(index)}
                     title={t('tooltipHistoryState')}
-                    className={`w-14 h-14 rounded-md object-cover cursor-pointer transition-all ${historyIndex === index ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-[#131314]' : 'hover:ring-1 hover:ring-white/50'}`}
+                    className={`w-12 h-12 rounded-md object-cover cursor-pointer transition-all flex-shrink-0 ${historyIndex === index ? 'ring-2 ring-blue-500 ring-offset-1 ring-offset-[#131314]' : 'hover:ring-1 hover:ring-white/50 opacity-60 hover:opacity-100'}`}
                 />
             ))}
         </div>
         <div className="flex items-center gap-3">
-            <button onClick={handleReposition} disabled={movedObjects.length === 0 || isActionInProgress} className="bg-gray-600 text-white font-semibold px-5 py-2.5 rounded-lg disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed flex items-center justify-center" title={t('tooltipApplyMove')}>
+            <button onClick={handleReposition} disabled={movedObjects.length === 0 || isActionInProgress} className="bg-[#2C2C2E] hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-sm transition-colors" title={t('tooltipApplyMove')}>
                 {generationStatus === 'generating' ? <Spinner size="sm" /> : t('applyMove')}
             </button>
-            <button onClick={handleDoneClick} className="bg-white text-black font-semibold px-5 py-2.5 rounded-lg" title={t('tooltipDoneEditing')}>{t('done')}</button>
+            <button onClick={handleDoneClick} className="bg-white hover:bg-gray-200 text-black font-semibold px-4 py-2 rounded-lg text-sm transition-colors" title={t('tooltipDoneEditing')}>{t('done')}</button>
         </div>
       </footer>
       <EditorDevModeConfirmationModal

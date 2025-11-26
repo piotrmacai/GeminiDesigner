@@ -51,7 +51,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   
   useEffect(() => {
     return () => {
-      imageUrls.forEach(URL.revokeObjectURL);
+      imageUrls.forEach(url => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUrls]);
@@ -66,7 +66,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
+      const files: File[] = Array.from(e.target.files);
       const newFiles = [...imageFiles, ...files];
       setImageFiles(newFiles);
 
@@ -114,40 +114,46 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       <div className="flex-1 flex flex-col">
         {/* Display Reference Images */}
         {hasReferences && (
-          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
-             {referenceImageUrls.map((url, index) => (
-                <div key={`ref-${index}`} className="relative group">
-                    <img src={url} alt={`Reference ${index + 1}`} className="w-12 h-12 rounded-lg object-cover border border-blue-500/50" />
-                    <div className="absolute -bottom-2 -right-2 bg-blue-600 text-[10px] text-white px-1.5 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">Ref</div>
-                    <button 
-                      onClick={() => onRemoveReferenceImage(index)}
-                      className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
-                      aria-label="Remove reference"
-                      title="Remove reference"
-                    >
-                      &times;
-                    </button>
-                </div>
-             ))}
+          <div className="mb-2">
+             <span className="text-xs text-blue-400 font-semibold mb-1 block uppercase tracking-wider">Active Context (Ref Images)</span>
+             <div className="flex items-center flex-wrap gap-2 px-1">
+                {referenceImageUrls.map((url, index) => (
+                    <div key={`ref-${index}`} className="relative group">
+                        <img src={url} alt={`Reference ${index + 1}`} className="w-12 h-12 rounded-lg object-cover border-2 border-blue-500/50" />
+                        <div className="absolute -bottom-2 -right-2 bg-blue-600 text-[10px] text-white px-1.5 py-0.5 rounded-full shadow-sm z-10 pointer-events-none">#{index + 1}</div>
+                        <button 
+                        onClick={() => onRemoveReferenceImage(index)}
+                        className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500 transition-colors"
+                        aria-label="Remove reference"
+                        title="Remove reference"
+                        >
+                        &times;
+                        </button>
+                    </div>
+                ))}
+             </div>
           </div>
         )}
 
         {/* Display New Uploads */}
         {hasUploads && (
-          <div className="flex items-center flex-wrap gap-2 mb-2 px-1">
-            {imageUrls.map((url, index) => (
-              <div key={`upload-${index}`} className="relative">
-                <img src={url} alt={`Upload preview ${index + 1}`} className="w-12 h-12 rounded-lg object-cover" />
-                <button 
-                  onClick={() => removeImage(index)}
-                  className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500"
-                  aria-label={`Remove image ${index + 1}`}
-                  title={t('tooltipRemoveImage')}
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
+          <div className="mb-2">
+             <span className="text-xs text-green-400 font-semibold mb-1 block uppercase tracking-wider">New Uploads</span>
+             <div className="flex items-center flex-wrap gap-2 px-1">
+                {imageUrls.map((url, index) => (
+                <div key={`upload-${index}`} className="relative">
+                    <img src={url} alt={`Upload preview ${index + 1}`} className="w-12 h-12 rounded-lg object-cover border border-green-500/30" />
+                    <button 
+                    onClick={() => removeImage(index)}
+                    className="absolute -top-1.5 -right-1.5 bg-gray-800 text-white rounded-full h-5 w-5 flex items-center justify-center text-xs font-bold border-2 border-[#1C1C1E] hover:bg-red-500 transition-colors"
+                    aria-label={`Remove image ${index + 1}`}
+                    title={t('tooltipRemoveImage')}
+                    >
+                    &times;
+                    </button>
+                </div>
+                ))}
+             </div>
           </div>
         )}
 
@@ -157,11 +163,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={hasReferences || hasUploads ? t('chatPlaceholderEdit') : t('chatPlaceholderNew')}
-          className="bg-transparent text-white placeholder-gray-500 focus:outline-none text-base w-full px-1"
+          className="bg-transparent text-white placeholder-gray-500 focus:outline-none text-base w-full px-1 py-1"
           disabled={isDisabled}
         />
       </div>
-      <div className="flex items-center self-end gap-1">
+      <div className="flex items-center self-end gap-1 mt-1">
         <WebSearchToggle isEnabled={useWebSearch} onToggle={setUseWebSearch} />
         <input
           type="file"
@@ -188,8 +194,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
           </svg>
         </button>
         <div className="relative" ref={ratioMenuRef}>
@@ -216,7 +223,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         <button
           onClick={handleSend}
           disabled={!prompt.trim() || isDisabled}
-          className="p-2 rounded-full bg-gray-700 text-white disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+          className="p-2 rounded-full bg-gray-700 text-white disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors"
           title={t('tooltipSendMessage')}
         >
           <svg

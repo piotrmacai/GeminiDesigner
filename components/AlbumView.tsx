@@ -3,6 +3,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { ImageGallery } from './ImageGallery';
+import { EditorView } from './EditorView';
 import type { Album, ChatMessage as ChatMessageType, ImageVariation } from '../types';
 import { ImageModal } from './ImageModal';
 import { dataUrlToFile } from '../utils/imageUtils';
@@ -20,6 +21,7 @@ interface AlbumViewProps {
 export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUpdateReferenceImages, isDevMode }) => {
   const [selectedImageUrl, setSelectedImageUrl] = React.useState<string | null>(null);
   const [prefilledPrompt, setPrefilledPrompt] = useState('');
+  const [editingImage, setEditingImage] = useState<ImageVariation | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   const [leftPanelWidth, setLeftPanelWidth] = useState(450);
@@ -58,8 +60,10 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [album.chatHistory]);
+    if (!editingImage) {
+        scrollToBottom();
+    }
+  }, [album.chatHistory, editingImage]);
   
   const fileToDataUrl = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -86,6 +90,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
         const assistantLoadingId = (Date.now() + 1).toString();
         
         // 1. Accumulate new images into references
+        // The rule: First uploaded image in session is first reference. Subsequent uploads append.
         let currentReferenceUrls = explicitReferenceUrls || [...(album.referenceImageUrls || [])];
         let newUploadedUrls: string[] = [];
 
@@ -98,6 +103,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
 
         const isNewTextToImage = currentReferenceUrls.length === 0;
         const sourceForDisplay = currentReferenceUrls.length > 0 ? currentReferenceUrls[0] : undefined;
+        // Display uploads for this specific message
         let displayImageUrls = [...newUploadedUrls]; 
 
         try {
@@ -219,14 +225,19 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
   );
   
   const handleSuggestionSend = useCallback(async (suggestion: string, sourceImageUrl?: string) => {
+    // If suggestion is clicked with a source image, we treat that source as context for the prompt
     let effectiveRefs = [...(album.referenceImageUrls || [])];
+    
+    // If there are no references yet, and this suggestion comes from an image, add it.
+    if (sourceImageUrl && effectiveRefs.length === 0) {
+        effectiveRefs.push(sourceImageUrl);
+        onUpdateReferenceImages(effectiveRefs);
+    }
+    
+    // Attempt to determine aspectRatio from source if available, else 1:1
+    let ar = '1:1';
     if (sourceImageUrl) {
-        if (!effectiveRefs.includes(sourceImageUrl)) {
-             effectiveRefs.push(sourceImageUrl);
-             onUpdateReferenceImages(effectiveRefs);
-        }
-        
-        try {
+         try {
             const img = new Image();
             img.src = sourceImageUrl;
             await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
@@ -238,13 +249,11 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
             const closest = aspectRatios.reduce((prev, curr) => 
                 Math.abs(curr.val - ratio) < Math.abs(prev.val - ratio) ? curr : prev
             );
-            handleSendPrompt(suggestion, [], false, closest.key, effectiveRefs);
-        } catch(error) {
-            handleSendPrompt(suggestion, [], false, '1:1', effectiveRefs);
-        }
-    } else {
-      setPrefilledPrompt(suggestion);
+            ar = closest.key;
+        } catch(e) {}
     }
+    
+    handleSendPrompt(suggestion, [], false, ar, effectiveRefs);
   }, [handleSendPrompt, onUpdateReferenceImages, album.referenceImageUrls]);
 
   const handleRetry = (failedMessage: ChatMessageType) => {
@@ -314,7 +323,27 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
     handleCloseModal();
   };
   
+  const handleEditVariation = (variation: ImageVariation) => {
+    setEditingImage(variation);
+  };
+  
   const isAssistantLoading = album.chatHistory[album.chatHistory.length - 1]?.isLoading;
+
+  if (editingImage) {
+      return (
+          <EditorView 
+            image={editingImage}
+            onDone={(newVariation) => {
+                if (newVariation) {
+                    const updatedGallery = [newVariation, ...album.galleryImages];
+                    onUpdateAlbum({ ...album, galleryImages: updatedGallery });
+                }
+                setEditingImage(null);
+            }}
+            isDevMode={isDevMode}
+          />
+      );
+  }
 
   return (
     <div className="flex h-full bg-[#1E1F22]">
@@ -332,7 +361,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
                 message={msg} 
                 onSelectImage={handleSelectImage} 
                 onSuggestionClick={handleSuggestionSend}
-                onEditImage={(variation) => handleAddToChat(variation.imageUrl)}
+                onEditImage={handleEditVariation}
                 onAddToAlbum={() => {}}
                 onRetry={handleRetry}
                 onRetryVariation={handleRetryVariation}
@@ -368,7 +397,7 @@ export const AlbumView: React.FC<AlbumViewProps> = ({ album, onUpdateAlbum, onUp
         </header>
         <ImageGallery 
             images={album.galleryImages} 
-            onEditImage={(variation) => handleAddToChat(variation.imageUrl)}
+            onEditImage={handleEditVariation}
             onRetryVariation={handleRetryVariation} 
         />
       </div>

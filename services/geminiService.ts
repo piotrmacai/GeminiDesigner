@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { ImageVariation } from "../types";
 import { getCurrentLanguage } from "../i18n";
@@ -474,15 +475,37 @@ Return this information in the specified JSON format.`;
     return result.objects || [];
 };
 
-export const editImageWithMask = async (base64Data: string, mimeType: string, prompt: string, maskBase64: string): Promise<string[]> => {
+export const editImageWithMask = async (
+    base64Data: string, 
+    mimeType: string, 
+    prompt: string, 
+    maskBase64: string,
+    referenceImageBase64?: string,
+    referenceImageMimeType?: string
+): Promise<string[]> => {
     const client = getAiClient();
     const imagePart = { inlineData: { data: base64Data, mimeType } };
     const maskPart = { inlineData: { data: maskBase64, mimeType: 'image/png' } };
-    const textPart = { text: `User request: "${prompt}". You are a world-class professional product photo retoucher. Your task is to edit an image based on the user's request, but you MUST ONLY modify the white masked area. The rest of the image (the black area) must remain completely unchanged. Do not alter the original image's style, lighting, or composition. Apply the change seamlessly and realistically to the masked region.` };
+    
+    let parts: any[] = [imagePart, maskPart];
+    
+    // Add reference image if provided
+    if (referenceImageBase64) {
+        const refImagePart = { 
+            inlineData: { 
+                data: referenceImageBase64, 
+                mimeType: referenceImageMimeType || 'image/png' 
+            } 
+        };
+        parts.push(refImagePart);
+        parts.push({ text: `User request: "${prompt}". I have provided: 1. The original image. 2. A mask indicating the area to edit (white). 3. A reference image for style/texture. Edit the masked area to match the style/content of the reference image, following the user's prompt. The unmasked area must remain unchanged.` });
+    } else {
+        parts.push({ text: `User request: "${prompt}". You are a world-class professional product photo retoucher. Your task is to edit an image based on the user's request, but you MUST ONLY modify the white masked area. The rest of the image (the black area) must remain completely unchanged. Do not alter the original image's style, lighting, or composition. Apply the change seamlessly and realistically to the masked region.` });
+    }
 
     const response = await client.models.generateContent({
         model: 'gemini-2.5-flash-image',
-        contents: { parts: [imagePart, maskPart, textPart] },
+        contents: { parts },
         config: {
             responseModalities: [Modality.IMAGE],
         }
